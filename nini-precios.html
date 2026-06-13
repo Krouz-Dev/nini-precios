@@ -1054,25 +1054,15 @@ async function analyzeTickets() {
       return;
     }
 
-    document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map(item =>
-      `<div class="session-item">
-        <div class="session-item-name">${item.name}</div>
-        <div class="session-item-price">${fmtPrice(item.price)}</div>
-      </div>`
-    ).join('');
-    document.getElementById('ticket-extract-result').style.display = 'block';
+    // Auto-cargar directo al carrito, sin paso de confirmación
+    loaderText.textContent = 'Agregando productos al carrito...';
+    await importTicketItems();
   } catch(e) {
     console.error(e);
     if (ticketExtracted.length) {
-      // Si alcanzó a procesar algunas tandas, mostramos lo que hay
-      document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map(item =>
-        `<div class="session-item">
-          <div class="session-item-name">${item.name}</div>
-          <div class="session-item-price">${fmtPrice(item.price)}</div>
-        </div>`
-      ).join('');
-      document.getElementById('ticket-extract-result').style.display = 'block';
-      showToast('Algunas fotos fallaron, revisá el resultado');
+      loaderText.textContent = 'Agregando lo procesado...';
+      await importTicketItems();
+      showToast('Algunas fotos fallaron, revisá el carrito');
     } else {
       showToast('Error al analizar. Probá con menos fotos.');
       document.getElementById('ticket-analyze-btn').style.display = 'block';
