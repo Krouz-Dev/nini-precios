@@ -712,26 +712,51 @@ function renderHistory(history) {
     return;
   }
   el.innerHTML = history.map((h, idx) => {
-    const items = (h.items || []).map(item => {
-      const arrow = !item.prevPrice ? '➡️' : item.price > item.prevPrice ? '🔴↑' : item.price < item.prevPrice ? '🟢↓' : '➡️';
-      return `<div class="history-item">
-        <div class="history-item-name">${item.name}</div>
-        <div class="history-item-prev">${item.prevPrice ? fmtPrice(item.prevPrice) : '-'}</div>
-        <div class="history-item-arrow">${arrow}</div>
-        <div class="history-item-price">${fmtPrice(item.price)}</div>
-      </div>`;
-    }).join('');
+    const items = h.items || [];
+    const total = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
+    const label = idx === 0 ? 'Compra más reciente' : idx === 1 ? 'Compra anterior' : 'Hace 2 compras';
     return `<div class="history-card">
-      <div class="history-header">
+      <div class="history-header" onclick="toggleHistory(${idx})" style="cursor:pointer;">
         <div>
-          <div class="history-header-title">Compra ${idx === 0 ? 'más reciente' : idx === 1 ? 'anterior' : 'hace 2 compras'}</div>
-          <div class="history-header-date">${h.date ? fmtDate(h.date) : ''}</div>
+          <div class="history-header-title">${label}</div>
+          <div class="history-header-date">${h.date ? fmtDate(h.date) : ''} · ${items.length} productos</div>
         </div>
-        <div class="history-header-total">${fmtPrice(h.total)}</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="history-header-total">${fmtPrice(total)}</div>
+          <div id="hist-arrow-${idx}" style="color:rgba(255,255,255,0.6);font-size:18px;">▼</div>
+        </div>
       </div>
-      ${items}
+      <div id="hist-detail-${idx}" style="display:none;">
+        <div style="padding:10px 16px 4px;display:grid;grid-template-columns:1fr 70px 24px 70px;gap:4px;">
+          <div style="font-size:10px;color:var(--slate);font-weight:700;text-transform:uppercase;">Producto</div>
+          <div style="font-size:10px;color:var(--slate);font-weight:700;text-transform:uppercase;text-align:right;">Anterior</div>
+          <div></div>
+          <div style="font-size:10px;color:var(--slate);font-weight:700;text-transform:uppercase;text-align:right;">Actual</div>
+        </div>
+        ${items.map(item => {
+          const arrow = !item.prevPrice ? '➡️' : Number(item.price) > Number(item.prevPrice) ? '🔴↑' : Number(item.price) < Number(item.prevPrice) ? '🟢↓' : '➡️';
+          return `<div class="history-item">
+            <div class="history-item-name">${item.name}</div>
+            <div class="history-item-prev">${item.prevPrice ? fmtPrice(item.prevPrice) : '-'}</div>
+            <div class="history-item-arrow">${arrow}</div>
+            <div class="history-item-price">${fmtPrice(item.price)}</div>
+          </div>`;
+        }).join('')}
+        <div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:center;background:var(--light);border-top:1px solid var(--border);">
+          <span style="font-size:13px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:0.05em;">Total</span>
+          <span style="font-size:20px;font-weight:800;">${fmtPrice(total)}</span>
+        </div>
+      </div>
     </div>`;
   }).join('');
+}
+
+function toggleHistory(idx) {
+  const detail = document.getElementById(`hist-detail-${idx}`);
+  const arrow = document.getElementById(`hist-arrow-${idx}`);
+  const open = detail.style.display !== 'none';
+  detail.style.display = open ? 'none' : 'block';
+  arrow.textContent = open ? '▼' : '▲';
 }
 
 // ── Scanner ────────────────────────────────────────────────────────────────
@@ -792,11 +817,42 @@ async function handleBarcode(barcode) {
 }
 
 // ── Product Modal ──────────────────────────────────────────────────────────
+async function lookupBarcode(barcode) {
+  // 1. Open Food Facts
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const data = await res.json();
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name = [p.brands, p.product_name].filter(Boolean).join(' ').trim();
+      if (name) return { name: name.slice(0, 60), source: 'Open Food Facts' };
+    }
+  } catch {}
+
+  // 2. Claude fallback
+  try {
+    const res = await fetch(CLAUDE_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 80,
+        messages: [{ role: 'user', content: `Código de barras argentino: ${barcode}. Solo el nombre del producto (marca + descripción corta, máx 50 chars). Si no lo conocés con certeza, respondé "Desconocido".` }]
+      })
+    });
+    const data = await res.json();
+    const name = data.content?.[0]?.text?.trim();
+    if (name && name !== 'Desconocido') return { name: name.slice(0, 60), source: 'IA' };
+  } catch {}
+
+  return null;
+}
+
 async function openProductModal(barcode, existing) {
   existing = existing || products[barcode];
   document.getElementById('modal-barcode').value = barcode;
   document.getElementById('modal-name').value = existing?.name || '';
-  document.getElementById('modal-price').value = '';
+  const lastKnownPrice = existing?.history?.length ? existing.history[existing.history.length-1].price : '';
+  document.getElementById('modal-price').value = lastKnownPrice;
   document.getElementById('modal-product-title').textContent = existing ? 'Actualizar precio' : 'Nuevo producto';
   document.getElementById('modal-save-btn').style.display = 'block';
   document.getElementById('modal-loading').style.display = 'none';
@@ -818,25 +874,25 @@ async function openProductModal(barcode, existing) {
 
   openModal('modal-product');
 
-  // Auto-suggest name via Claude if new product
+  // Cascade lookup if new product
   if (!existing?.name) {
     document.getElementById('modal-loading').style.display = 'block';
+    document.getElementById('modal-loading').querySelector('.loading-text').textContent = 'Buscando producto...';
     document.getElementById('modal-save-btn').style.display = 'none';
-    try {
-      const res = await fetch(CLAUDE_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6', max_tokens: 80,
-          messages: [{ role: 'user', content: `Código de barras: ${barcode}. Solo decime el nombre del producto (marca + descripción corta, máx 40 chars). Si no lo conocés, respondé "Desconocido".` }]
-        })
-      });
-      const data = await res.json();
-      const name = data.content?.[0]?.text?.trim();
-      if (name && name !== 'Desconocido') document.getElementById('modal-name').value = name;
-    } catch {}
-    document.getElementById('modal-loading').style.display = 'none';
-    document.getElementById('modal-save-btn').style.display = 'block';
+
+    const result = await lookupBarcode(barcode);
+    if (result) {
+      document.getElementById('modal-name').value = result.name;
+      document.getElementById('modal-loading').querySelector('.loading-text').textContent = `Encontrado via ${result.source}`;
+      setTimeout(() => {
+        document.getElementById('modal-loading').style.display = 'none';
+        document.getElementById('modal-save-btn').style.display = 'block';
+      }, 800);
+    } else {
+      document.getElementById('modal-loading').style.display = 'none';
+      document.getElementById('modal-save-btn').style.display = 'block';
+      showToast('Producto no encontrado — ingresá el nombre');
+    }
   }
 }
 
@@ -901,26 +957,30 @@ async function analyzeTickets() {
   document.getElementById('ticket-extract-result').style.display = 'none';
 
   try {
-    const content = [
-      ...ticketImages.map(img => ({
-        type: 'image',
-        source: { type: 'base64', media_type: img.split(';')[0].split(':')[1], data: img.split(',')[1] }
-      })),
-      { type: 'text', text: 'Extraé todos los productos de este ticket de supermercado. Respondé SOLO con JSON válido, sin texto extra. Formato: {"items":[{"name":"nombre producto","price":1234}]}. Usá el precio final con IVA (columna TOTAL o PU CON IVA). Solo incluí productos con precio.' }
-    ];
+    // Apps Script actúa de proxy para evitar CORS con Claude API
+    const url = new URL(API);
+    url.searchParams.set('action', 'analyzeTicket');
+    url.searchParams.set('data', JSON.stringify({
+      images: ticketImages.map(img => ({
+        media_type: img.split(';')[0].split(':')[1],
+        data: img.split(',')[1]
+      }))
+    }));
 
-    const res = await fetch(CLAUDE_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content }] })
-    });
-    const data = await res.json();
-    const text = data.content?.[0]?.text || '{}';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
-    ticketExtracted = parsed.items || [];
+    const res = await fetch(url);
+    const result = await res.json();
 
-    document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map((item, i) =>
+    if (result.error) throw new Error(result.error);
+    ticketExtracted = result.items || [];
+
+    if (!ticketExtracted.length) {
+      showToast('No se detectaron productos en las fotos');
+      document.getElementById('ticket-analyze-btn').style.display = 'block';
+      document.getElementById('ticket-loading').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map(item =>
       `<div class="session-item">
         <div class="session-item-name">${item.name}</div>
         <div class="session-item-price">${fmtPrice(item.price)}</div>
@@ -928,7 +988,8 @@ async function analyzeTickets() {
     ).join('');
     document.getElementById('ticket-extract-result').style.display = 'block';
   } catch(e) {
-    showToast('Error al analizar el ticket');
+    console.error(e);
+    showToast('Error al analizar. Revisá la conexión.');
     document.getElementById('ticket-analyze-btn').style.display = 'block';
   }
   document.getElementById('ticket-loading').style.display = 'none';
