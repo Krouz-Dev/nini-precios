@@ -994,37 +994,52 @@ function handleTicketFiles(event) {
   });
 }
 
+async function analyzeOneBatch(batch) {
+  const body = JSON.stringify({
+    action: 'analyzeTicket',
+    images: batch.map(img => ({
+      media_type: img.split(';')[0].split(':')[1],
+      data: img.split(',')[1]
+    }))
+  });
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: body,
+    redirect: 'follow'
+  });
+  const result = await res.json();
+  if (result.error) throw new Error(result.error);
+  return result.items || [];
+}
+
 async function analyzeTickets() {
   if (!ticketImages.length) { showToast('Subí al menos una foto'); return; }
-  document.getElementById('ticket-loading').style.display = 'block';
+  const loader = document.getElementById('ticket-loading');
+  const loaderText = loader.querySelector('.loading-text');
+  loader.style.display = 'block';
   document.getElementById('ticket-analyze-btn').style.display = 'none';
   document.getElementById('ticket-extract-result').style.display = 'none';
 
+  // Procesar en tandas de 2 imágenes para evitar timeouts
+  const BATCH_SIZE = 2;
+  const batches = [];
+  for (let i = 0; i < ticketImages.length; i += BATCH_SIZE) {
+    batches.push(ticketImages.slice(i, i + BATCH_SIZE));
+  }
+
+  ticketExtracted = [];
   try {
-    // POST con text/plain para evitar el preflight CORS de Apps Script
-    const body = JSON.stringify({
-      action: 'analyzeTicket',
-      images: ticketImages.map(img => ({
-        media_type: img.split(';')[0].split(':')[1],
-        data: img.split(',')[1]
-      }))
-    });
-
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: body,
-      redirect: 'follow'
-    });
-    const result = await res.json();
-
-    if (result.error) throw new Error(result.error);
-    ticketExtracted = result.items || [];
+    for (let b = 0; b < batches.length; b++) {
+      loaderText.textContent = `Analizando ticket... (${b + 1} de ${batches.length})`;
+      const items = await analyzeOneBatch(batches[b]);
+      ticketExtracted = ticketExtracted.concat(items);
+    }
 
     if (!ticketExtracted.length) {
       showToast('No se detectaron productos en las fotos');
       document.getElementById('ticket-analyze-btn').style.display = 'block';
-      document.getElementById('ticket-loading').style.display = 'none';
+      loader.style.display = 'none';
       return;
     }
 
@@ -1037,10 +1052,22 @@ async function analyzeTickets() {
     document.getElementById('ticket-extract-result').style.display = 'block';
   } catch(e) {
     console.error(e);
-    showToast('Error al analizar. Revisá la conexión.');
-    document.getElementById('ticket-analyze-btn').style.display = 'block';
+    if (ticketExtracted.length) {
+      // Si alcanzó a procesar algunas tandas, mostramos lo que hay
+      document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map(item =>
+        `<div class="session-item">
+          <div class="session-item-name">${item.name}</div>
+          <div class="session-item-price">${fmtPrice(item.price)}</div>
+        </div>`
+      ).join('');
+      document.getElementById('ticket-extract-result').style.display = 'block';
+      showToast('Algunas fotos fallaron, revisá el resultado');
+    } else {
+      showToast('Error al analizar. Probá con menos fotos.');
+      document.getElementById('ticket-analyze-btn').style.display = 'block';
+    }
   }
-  document.getElementById('ticket-loading').style.display = 'none';
+  loader.style.display = 'none';
 }
 
 async function importTicketItems() {
