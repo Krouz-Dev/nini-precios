@@ -923,6 +923,50 @@ async function saveProduct() {
   } catch(e) { showToast('Error al guardar'); }
 }
 
+// ── Matching de productos (local, sin tokens) ──────────────────────────────
+const ABBREV = {
+  'cuid': 'cuidado', 'tot': 'total', 'sve': 'suave', 'orig': 'original',
+  'clas': 'clasico', 'choc': 'chocolate', 'van': 'vainilla', 'fr': 'frutilla',
+  'pure': 'puré', 'tom': 'tomate', 'tb': 'triturado', 'pall': 'pallares',
+  'leg': 'legumbres', 'gr': 'grano', 'desc': 'descremada', 'uht': 'larga vida',
+  'jab': 'jabon', 'liq': 'liquido', 'limp': 'limpiador', 'crem': 'crema',
+  'arom': 'aromatizante', 'tex': 'textil', 'jazm': 'jazmin', 'aer': 'aerosol',
+  'desod': 'desodorante', 'mascabo': 'mascabo', 'pasc': 'pascualina',
+  'pol': 'polvo', 'panc': 'pancho', 'hierb': 'hierbas', 'horn': 'horneado',
+  'nvto': 'novillito', 'salchich': 'salchicha', 'parril': 'parrillera',
+  's/tacc': 'sin tacc', 'lib': 'libre', 'esp': 'esponja'
+};
+
+function normalize(text) {
+  let t = (text || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // sin acentos
+    .replace(/[.,;:()\/]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  // expandir abreviaturas
+  return t.split(' ').map(w => ABBREV[w] || w).filter(Boolean);
+}
+
+function similarity(nameA, nameB) {
+  const tokensA = normalize(nameA);
+  const tokensB = normalize(nameB);
+  if (!tokensA.length || !tokensB.length) return 0;
+  const setB = new Set(tokensB);
+  let matches = 0;
+  tokensA.forEach(t => { if (setB.has(t) && t.length > 2) matches++; });
+  return matches / Math.max(tokensA.length, tokensB.length);
+}
+
+// Busca el producto ya guardado que mejor matchea con un nombre del ticket
+function findLocalMatch(ticketName) {
+  let best = null, bestScore = 0;
+  Object.values(products).forEach(p => {
+    const score = similarity(ticketName, p.name);
+    if (score > bestScore) { bestScore = score; best = p; }
+  });
+  // Umbral: 60% de tokens en común
+  return bestScore >= 0.6 ? best : null;
+}
+
 // ── Ticket Upload ──────────────────────────────────────────────────────────
 function openTicketModal() {
   ticketImages = [];
@@ -1009,23 +1053,29 @@ async function importTicketItems() {
   loader.querySelector('.loading-text').textContent = 'Agregando productos, esperá...';
   loader.style.display = 'block';
 
-  // Agregar todos los items de una sola vez (más rápido que uno por uno)
+  // Agregar items intentando matchear con productos ya guardados (sin tokens)
   const items = currentSession.items || [];
+  let matched = 0;
   ticketExtracted.forEach(item => {
+    const match = findLocalMatch(item.name);
     items.push({
-      barcode: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: item.name,
-      price: item.price
+      barcode: match ? match.barcode : `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: match ? match.name : item.name,
+      price: item.price,
+      matched: !!match
     });
+    if (match) matched++;
   });
   currentSession.items = items;
+  window._lastMatchInfo = matched;
 
   try {
     await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
     renderSessionItems();
     loader.style.display = 'none';
     closeModal('modal-ticket');
-    showToast(`${ticketExtracted.length} productos agregados ✓`);
+    const m = window._lastMatchInfo || 0;
+    showToast(`${ticketExtracted.length} agregados${m ? ` · ${m} reconocidos` : ''} ✓`);
   } catch(e) {
     loader.style.display = 'none';
     showToast('Error al agregar. Intentá de nuevo.');
