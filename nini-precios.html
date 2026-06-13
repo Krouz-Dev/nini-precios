@@ -957,17 +957,21 @@ async function analyzeTickets() {
   document.getElementById('ticket-extract-result').style.display = 'none';
 
   try {
-    // Apps Script actúa de proxy para evitar CORS con Claude API
-    const url = new URL(API);
-    url.searchParams.set('action', 'analyzeTicket');
-    url.searchParams.set('data', JSON.stringify({
+    // POST con text/plain para evitar el preflight CORS de Apps Script
+    const body = JSON.stringify({
+      action: 'analyzeTicket',
       images: ticketImages.map(img => ({
         media_type: img.split(';')[0].split(':')[1],
         data: img.split(',')[1]
       }))
-    }));
+    });
 
-    const res = await fetch(url);
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body,
+      redirect: 'follow'
+    });
     const result = await res.json();
 
     if (result.error) throw new Error(result.error);
