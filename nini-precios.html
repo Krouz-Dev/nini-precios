@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nini Precios">
+<meta name="theme-color" content="#C8102E">
+<title>Nini Precios</title>
+<style>
+  :root {
+    --red: #C8102E;
+    --red-dark: #9E0B24;
+    --ink: #1A1A1A;
+    --slate: #6B7280;
+    --light: #F0F0EE;
+    --white: #FFFFFF;
+    --green: #16A34A;
+    --amber: #D97706;
+    --border: #E5E5E3;
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: var(--light); color: var(--ink); }
+  
+  /* ── PIN Screen ── */
+  #pin-screen {
+    position: fixed; inset: 0; background: var(--red);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 1000; padding: 32px;
+  }
+  #pin-screen.hidden { display: none; }
+  .pin-logo { font-size: 48px; margin-bottom: 8px; }
+  .pin-title { color: white; font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+  .pin-sub { color: rgba(255,255,255,0.7); font-size: 14px; margin-bottom: 40px; }
+  .pin-dots { display: flex; gap: 16px; margin-bottom: 32px; }
+  .pin-dot { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,0.3); transition: background 0.2s; }
+  .pin-dot.filled { background: white; }
+  .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 280px; }
+  .pin-key {
+    background: rgba(255,255,255,0.15); border: none; border-radius: var(--radius-sm);
+    color: white; font-size: 24px; font-weight: 700; padding: 20px;
+    cursor: pointer; transition: background 0.15s; user-select: none;
+  }
+  .pin-key:active { background: rgba(255,255,255,0.3); }
+  .pin-key.del { font-size: 18px; }
+  .pin-error { color: rgba(255,255,255,0.9); font-size: 14px; margin-top: 12px; font-weight: 600; opacity: 0; transition: opacity 0.3s; }
+  .pin-error.show { opacity: 1; }
+
+  /* ── App Shell ── */
+  #app { display: none; flex-direction: column; height: 100vh; max-width: 480px; margin: 0 auto; }
+  #app.visible { display: flex; }
+
+  /* ── Header ── */
+  .header {
+    background: var(--red); padding: 20px 20px 16px;
+    flex-shrink: 0; position: relative;
+  }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .header-eyebrow { color: rgba(255,255,255,0.65); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .header-title { color: white; font-size: 24px; font-weight: 800; }
+  .header-badge { background: rgba(255,255,255,0.18); border-radius: 20px; padding: 5px 12px; color: white; font-size: 12px; font-weight: 700; }
+
+  /* ── Bottom Nav ── */
+  .bottom-nav {
+    display: flex; background: white; border-top: 1px solid var(--border);
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom)); flex-shrink: 0;
+  }
+  .nav-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 8px 4px; background: none; border: none; cursor: pointer;
+    color: var(--slate); font-size: 10px; font-weight: 600; letter-spacing: 0.03em;
+    text-transform: uppercase; transition: color 0.15s;
+  }
+  .nav-btn.active { color: var(--red); }
+  .nav-btn .nav-icon { font-size: 24px; line-height: 1; }
+
+  /* ── Screens ── */
+  .screen { flex: 1; overflow-y: auto; display: none; }
+  .screen.active { display: block; }
+  .screen-pad { padding: 16px; }
+
+  /* ── Cards ── */
+  .card {
+    background: white; border-radius: var(--radius); padding: 16px;
+    margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .card-row { display: flex; align-items: center; gap: 12px; }
+  .card-body { flex: 1; min-width: 0; }
+  .card-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 12px; color: var(--slate); margin-top: 2px; font-family: monospace; }
+  .card-price { font-weight: 800; font-size: 20px; }
+  .card-delta { font-size: 11px; font-weight: 700; margin-top: 2px; }
+  .delta-up { color: var(--amber); }
+  .delta-down { color: var(--green); }
+  .card-date { font-size: 10px; color: #9CA3AF; margin-top: 2px; }
+
+  /* ── Buttons ── */
+  .btn {
+    width: 100%; padding: 18px; border: none; border-radius: var(--radius-sm);
+    font-size: 17px; font-weight: 700; cursor: pointer; transition: opacity 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn:active { opacity: 0.8; }
+  .btn-primary { background: var(--red); color: white; }
+  .btn-secondary { background: white; color: var(--ink); border: 1.5px solid var(--border); }
+  .btn-success { background: var(--green); color: white; }
+  .btn-disabled { background: var(--border); color: #9CA3AF; cursor: default; }
+  .btn-icon { font-size: 22px; }
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+
+  /* ── Inputs ── */
+  .field-label { font-size: 11px; color: var(--slate); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; }
+  .field-input {
+    width: 100%; padding: 14px 16px; border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border); font-size: 16px; background: white;
+    color: var(--ink); outline: none; transition: border-color 0.2s;
+  }
+  .field-input:focus { border-color: var(--red); }
+  .field-input.price { font-size: 26px; font-weight: 800; color: var(--red); }
+  .field-group { margin-bottom: 16px; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 500;
+    display: none; align-items: flex-end;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--light); width: 100%; border-radius: 22px 22px 0 0;
+    padding: 24px; max-height: 90vh; overflow-y: auto;
+    max-width: 480px; margin: 0 auto;
+  }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .modal-title { font-size: 19px; font-weight: 800; }
+  .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--slate); padding: 4px; }
+
+  /* ── Scanner ── */
+  #scanner-overlay {
+    position: fixed; inset: 0; background: black; z-index: 800; display: none; flex-direction: column;
+  }
+  #scanner-overlay.open { display: flex; }
+  #scanner-video { width: 100%; flex: 1; object-fit: cover; }
+  .scanner-header { background: #1A1A1A; padding: 16px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .scanner-back { background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1; }
+  .scanner-title { color: white; font-weight: 700; font-size: 16px; }
+  .scanner-viewfinder {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 270px; height: 150px;
+    border: 2.5px solid var(--red); border-radius: 10px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+  .scanner-hint { position: absolute; bottom: 40px; left: 0; right: 0; text-align: center; color: white; font-size: 13px; background: rgba(0,0,0,0.5); padding: 8px 20px; }
+
+  /* ── Session ── */
+  .session-code-display {
+    background: var(--red); border-radius: var(--radius); padding: 20px;
+    text-align: center; margin-bottom: 16px;
+  }
+  .session-code-label { color: rgba(255,255,255,0.7); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .session-code-num { color: white; font-size: 48px; font-weight: 800; letter-spacing: 12px; font-family: monospace; }
+  .session-item { background: white; border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .session-item-name { font-weight: 600; font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-item-price { font-weight: 800; font-size: 16px; color: var(--red); margin-left: 12px; flex-shrink: 0; }
+  .session-total { background: var(--ink); border-radius: var(--radius-sm); padding: 16px; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+  .session-total-label { color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+  .session-total-num { color: white; font-size: 26px; font-weight: 800; }
+
+  /* ── History ── */
+  .history-card { background: white; border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .history-header { background: var(--ink); padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+  .history-header-title { color: white; font-weight: 700; font-size: 15px; }
+  .history-header-date { color: rgba(255,255,255,0.6); font-size: 12px; }
+  .history-header-total { color: white; font-weight: 800; font-size: 18px; }
+  .history-item { padding: 12px 16px; display: flex; align-items: center; border-bottom: 1px solid var(--border); gap: 10px; }
+  .history-item:last-child { border-bottom: none; }
+  .history-item-name { flex: 1; font-size: 13px; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-item-prev { font-size: 12px; color: var(--slate); min-width: 70px; text-align: right; }
+  .history-item-arrow { font-size: 14px; min-width: 24px; text-align: center; }
+  .history-item-price { font-size: 14px; font-weight: 700; min-width: 70px; text-align: right; }
+
+  /* ── Search bar ── */
+  .search-wrap { padding: 12px 16px 0; }
+  .search-input {
+    width: 100%; padding: 12px 16px 12px 40px; border-radius: 12px;
+    border: none; background: rgba(255,255,255,0.18); color: white;
+    font-size: 15px; outline: none;
+  }
+  .search-input::placeholder { color: rgba(255,255,255,0.6); }
+  .search-wrap-inner { position: relative; }
+  .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 15px; pointer-events: none; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: white; padding: 12px 24px; border-radius: 30px;
+    font-size: 14px; font-weight: 600; z-index: 900; opacity: 0;
+    transition: opacity 0.3s; pointer-events: none; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 60px 20px; color: var(--slate); }
+  .empty-icon { font-size: 52px; margin-bottom: 12px; }
+  .empty-title { font-weight: 700; font-size: 17px; color: var(--ink); margin-bottom: 6px; }
+  .empty-sub { font-size: 14px; line-height: 1.5; }
+
+  /* ── Ticket upload ── */
+  .upload-area {
+    border: 2px dashed var(--border); border-radius: var(--radius); padding: 24px;
+    text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 12px;
+  }
+  .upload-area:hover { border-color: var(--red); }
+  .upload-icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-label { font-weight: 600; font-size: 15px; color: var(--ink); }
+  .upload-sub { font-size: 12px; color: var(--slate); margin-top: 4px; }
+  .ticket-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+  .ticket-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+
+  /* ── Loading ── */
+  .loading-spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--red); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin: 0 auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-wrap { padding: 40px; text-align: center; }
+  .loading-text { color: var(--slate); font-size: 14px; margin-top: 12px; }
+
+  /* ── Divider ── */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+  .section-label { font-size: 11px; color: var(--slate); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<!-- PIN Screen -->
+<div id="pin-screen">
+  <div class="pin-logo">🛒</div>
+  <div class="pin-title">Nini Precios</div>
+  <div class="pin-sub">Ingresá tu PIN para continuar</div>
+  <div class="pin-dots">
+    <div class="pin-dot" id="d0"></div>
+    <div class="pin-dot" id="d1"></div>
+    <div class="pin-dot" id="d2"></div>
+    <div class="pin-dot" id="d3"></div>
+  </div>
+  <div class="pin-keypad">
+    <button class="pin-key" onclick="pinPress('1')">1</button>
+    <button class="pin-key" onclick="pinPress('2')">2</button>
+    <button class="pin-key" onclick="pinPress('3')">3</button>
+    <button class="pin-key" onclick="pinPress('4')">4</button>
+    <button class="pin-key" onclick="pinPress('5')">5</button>
+    <button class="pin-key" onclick="pinPress('6')">6</button>
+    <button class="pin-key" onclick="pinPress('7')">7</button>
+    <button class="pin-key" onclick="pinPress('8')">8</button>
+    <button class="pin-key" onclick="pinPress('9')">9</button>
+    <button class="pin-key" onclick="pinPress('')"></button>
+    <button class="pin-key" onclick="pinPress('0')">0</button>
+    <button class="pin-key del" onclick="pinDel()">⌫</button>
+  </div>
+  <div class="pin-error" id="pin-error">PIN incorrecto. Intentá de nuevo.</div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <!-- Header (dynamic) -->
+  <div class="header" id="main-header">
+    <div class="header-top">
+      <div>
+        <div class="header-eyebrow">Nini Mayorista</div>
+        <div class="header-title" id="header-title">Precios</div>
+      </div>
+      <div class="header-badge" id="header-badge">...</div>
+    </div>
+    <div class="search-wrap" id="search-wrap" style="margin-top:12px; padding: 0;">
+      <div class="search-wrap-inner">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="search-input" placeholder="Buscar producto o código..." oninput="renderProducts()">
+      </div>
+    </div>
+  </div>
+
+  <!-- Screens -->
+  <div class="screen active" id="screen-productos">
+    <div class="screen-pad">
+      <div class="btn-grid">
+        <button class="btn btn-primary" onclick="openScanner('product')">
+          <span class="btn-icon">📷</span> Escanear
+        </button>
+        <button class="btn btn-secondary" onclick="openManual('product')">
+          <span class="btn-icon">⌨️</span> Manual
+        </button>
+      </div>
+      <div class="section-label">Productos guardados</div>
+      <div id="products-list"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-compra">
+    <div class="screen-pad">
+      <div id="compra-no-session">
+        <div class="empty">
+          <div class="empty-icon">🛍️</div>
+          <div class="empty-title">¿Qué querés hacer?</div>
+        </div>
+        <button class="btn btn-primary" style="margin-bottom:10px;" onclick="crearSesion()">
+          <span class="btn-icon">➕</span> Nueva compra
+        </button>
+        <button class="btn btn-secondary" onclick="openJoinModal()">
+          <span class="btn-icon">🔗</span> Unirme a una compra
+        </button>
+      </div>
+      <div id="compra-session" style="display:none;">
+        <div class="session-code-display">
+          <div class="session-code-label">Código de la compra</div>
+          <div class="session-code-num" id="session-code-display">----</div>
+        </div>
+        <div class="btn-grid">
+          <button class="btn btn-primary" onclick="openScanner('session')">
+            <span class="btn-icon">📷</span> Escanear
+          </button>
+          <button class="btn btn-secondary" onclick="openManual('session')">
+            <span class="btn-icon">⌨️</span> Manual
+          </button>
+        </div>
+        <button class="btn btn-secondary" style="margin-bottom:16px;" onclick="openTicketModal()">
+          <span class="btn-icon">🧾</span> Subir foto del ticket
+        </button>
+        <div class="section-label" id="session-items-label">Productos en esta compra</div>
+        <div id="session-items-list"></div>
+        <div class="session-total" id="session-total" style="display:none;">
+          <span class="session-total-label">Total</span>
+          <span class="session-total-num" id="session-total-num">$0</span>
+        </div>
+        <div style="height:16px;"></div>
+        <button class="btn btn-success" onclick="cerrarSesion()">
+          <span class="btn-icon">✅</span> Cerrar compra
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-historial">
+    <div class="screen-pad">
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="nav-productos" onclick="switchScreen('productos')">
+      <span class="nav-icon">🏷️</span>
+      Precios
+    </button>
+    <button class="nav-btn" id="nav-compra" onclick="switchScreen('compra')">
+      <span class="nav-icon">🛒</span>
+      Compra
+    </button>
+    <button class="nav-btn" id="nav-historial" onclick="switchScreen('historial')">
+      <span class="nav-icon">📋</span>
+      Historial
+    </button>
+  </nav>
+</div>
+
+<!-- Scanner Overlay -->
+<div id="scanner-overlay">
+  <div class="scanner-header">
+    <button class="scanner-back" onclick="closeScanner()">←</button>
+    <span class="scanner-title">Apuntá al código de barras</span>
+  </div>
+  <div style="position:relative; flex:1;">
+    <video id="scanner-video" playsinline muted></video>
+    <div class="scanner-viewfinder"></div>
+    <div class="scanner-hint" id="scanner-hint">Centrá el código en el recuadro</div>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div class="modal-overlay" id="modal-product">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-product-title">Producto</span>
+      <button class="modal-close" onclick="closeModal('modal-product')">✕</button>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Código</div>
+      <input class="field-input" id="modal-barcode" readonly style="color:var(--slate); font-family:monospace;">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Nombre del producto</div>
+      <input class="field-input" id="modal-name" placeholder="Ej: Listerine 500ml">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Precio</div>
+      <input class="field-input price" id="modal-price" type="number" inputmode="numeric" placeholder="0">
+    </div>
+    <div id="modal-history-wrap" style="display:none; margin-bottom:16px;">
+      <div class="field-label">Historial de precios</div>
+      <div id="modal-history-list" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;"></div>
+    </div>
+    <button class="btn btn-primary" id="modal-save-btn" onclick="saveProduct()">Guardar</button>
+    <div id="modal-loading" class="loading-wrap" style="display:none;">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Buscando nombre del producto...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Code Modal -->
+<div class="modal-overlay" id="modal-manual">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Ingresá el código</span>
+      <button class="modal-close" onclick="closeModal('modal-manual')">✕</button>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Código de barras</div>
+      <input class="field-input" id="manual-code-input" type="number" inputmode="numeric" placeholder="Ej: 7790040575345" style="font-family:monospace; font-size:18px;">
+    </div>
+    <button class="btn btn-primary" onclick="submitManual()">Buscar</button>
+  </div>
+</div>
+
+<!-- Join Session Modal -->
+<div class="modal-overlay" id="modal-join">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Unirme a una compra</span>
+      <button class="modal-close" onclick="closeModal('modal-join')">✕</button>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Código de la compra</div>
+      <input class="field-input" id="join-code-input" type="number" inputmode="numeric" placeholder="0000" style="font-size:32px; font-weight:800; text-align:center; letter-spacing:8px; font-family:monospace;">
+    </div>
+    <button class="btn btn-primary" onclick="joinSesion()">Unirme</button>
+  </div>
+</div>
+
+<!-- Ticket Upload Modal -->
+<div class="modal-overlay" id="modal-ticket">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Subir ticket</span>
+      <button class="modal-close" onclick="closeModal('modal-ticket')">✕</button>
+    </div>
+    <div class="upload-area" onclick="document.getElementById('ticket-file-input').click()">
+      <div class="upload-icon">📸</div>
+      <div class="upload-label">Tocá para agregar fotos</div>
+      <div class="upload-sub">Podés subir varias fotos del ticket</div>
+    </div>
+    <input type="file" id="ticket-file-input" accept="image/*" multiple style="display:none" onchange="handleTicketFiles(event)">
+    <div class="ticket-thumbs" id="ticket-thumbs"></div>
+    <div id="ticket-extract-result" style="display:none;">
+      <div class="section-label">Productos detectados</div>
+      <div id="ticket-items-preview"></div>
+      <button class="btn btn-primary" style="margin-top:12px;" onclick="importTicketItems()">Agregar a la compra</button>
+    </div>
+    <div id="ticket-loading" class="loading-wrap" style="display:none;">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Analizando el ticket con IA...</div>
+    </div>
+    <button class="btn btn-secondary" style="margin-top:10px;" onclick="analyzeTickets()" id="ticket-analyze-btn" style="display:none;">
+      <span>🤖</span> Analizar ticket con IA
+    </button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbxltt4fIGgnKoJSCU_TRB2Y4hwZHHwHsROuLIW2eMd0MaUOcgtdqBjMB5suWwQBQMpL/exec';
+const PIN = '2013';
+const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
+
+// ── State ──────────────────────────────────────────────────────────────────
+let pinBuffer = '';
+let products = {};
+let currentSession = null;
+let sessionCode = null;
+let scannerMode = 'product'; // 'product' | 'session'
+let scannerStream = null;
+let scannerInterval = null;
+let ticketImages = []; // base64 arrays
+let ticketExtracted = [];
+let pollInterval = null;
+
+// ── PIN ────────────────────────────────────────────────────────────────────
+function pinPress(d) {
+  if (!d) return;
+  if (pinBuffer.length >= 4) return;
+  pinBuffer += d;
+  updatePinDots();
+  if (pinBuffer.length === 4) checkPin();
+}
+function pinDel() {
+  pinBuffer = pinBuffer.slice(0, -1);
+  updatePinDots();
+}
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(`d${i}`).classList.toggle('filled', i < pinBuffer.length);
+  }
+}
+function checkPin() {
+  if (pinBuffer === PIN) {
+    document.getElementById('pin-screen').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    init();
+  } else {
+    const err = document.getElementById('pin-error');
+    err.classList.add('show');
+    setTimeout(() => { err.classList.remove('show'); pinBuffer = ''; updatePinDots(); }, 1500);
+    pinBuffer = '';
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  await loadProducts();
+  renderProducts();
+  startPolling();
+}
+
+function startPolling() {
+  pollInterval = setInterval(async () => {
+    if (sessionCode) await refreshSession();
+  }, 3000);
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function apiCall(params) {
+  const url = new URL(API);
+  Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, v));
+  const res = await fetch(url);
+  return res.json();
+}
+
+async function loadProducts() {
+  try {
+    const data = await apiCall({ action: 'getProducts' });
+    products = data.products || {};
+    updateBadge();
+  } catch(e) { console.error(e); }
+}
+
+async function loadHistory() {
+  try {
+    const data = await apiCall({ action: 'getHistory' });
+    renderHistory(data.history || []);
+  } catch(e) { renderHistory([]); }
+}
+
+async function refreshSession() {
+  if (!sessionCode) return;
+  try {
+    const data = await apiCall({ action: 'getSession', code: sessionCode });
+    if (data.session) {
+      currentSession = data.session;
+      renderSessionItems();
+    }
+  } catch(e) {}
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function switchScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+  document.getElementById(`nav-${name}`).classList.add('active');
+
+  const titles = { productos: 'Precios', compra: 'Compra del día', historial: 'Historial' };
+  document.getElementById('header-title').textContent = titles[name];
+
+  const showSearch = name === 'productos';
+  document.getElementById('search-wrap').style.display = showSearch ? 'block' : 'none';
+
+  if (name === 'historial') loadHistory();
+  if (name === 'compra') renderCompraScreen();
+}
+
+function updateBadge() {
+  const count = Object.keys(products).length;
+  document.getElementById('header-badge').textContent = `${count} productos`;
+}
+
+// ── Products Screen ─────────────────────────────────────────────────────────
+function renderProducts() {
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const list = Object.values(products)
+    .filter(p => p.name.toLowerCase().includes(q) || p.barcode.includes(q))
+    .sort((a, b) => {
+      const da = a.history[a.history.length-1]?.date || '';
+      const db = b.history[b.history.length-1]?.date || '';
+      return db.localeCompare(da);
+    });
+
+  const el = document.getElementById('products-list');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🏷️</div><div class="empty-title">${q ? 'Sin resultados' : 'Todavía no hay productos'}</div><div class="empty-sub">${q ? '' : 'Escaneá un código para empezar'}</div></div>`;
+    return;
+  }
+  el.innerHTML = list.map(p => {
+    const last = p.history[p.history.length-1];
+    const prev = p.history[p.history.length-2];
+    const delta = prev ? ((last.price - prev.price) / prev.price * 100).toFixed(1) : null;
+    const deltaHtml = delta ? `<div class="card-delta ${parseFloat(delta) >= 0 ? 'delta-up' : 'delta-down'}">${parseFloat(delta) >= 0 ? '↑' : '↓'} ${Math.abs(delta)}% vs anterior</div>` : '';
+    return `<div class="card" onclick="openProductModal('${p.barcode}')">
+      <div class="card-row">
+        <div class="card-body">
+          <div class="card-title">${p.name}</div>
+          <div class="card-sub">${p.barcode}</div>
+          ${deltaHtml}
+        </div>
+        <div style="text-align:right; flex-shrink:0;">
+          <div class="card-price">${fmtPrice(last.price)}</div>
+          <div class="card-date">${fmtDate(last.date)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Compra Screen ──────────────────────────────────────────────────────────
+function renderCompraScreen() {
+  const hasSession = sessionCode && currentSession;
+  document.getElementById('compra-no-session').style.display = hasSession ? 'none' : 'block';
+  document.getElementById('compra-session').style.display = hasSession ? 'block' : 'none';
+  if (hasSession) {
+    document.getElementById('session-code-display').textContent = sessionCode;
+    renderSessionItems();
+  }
+}
+
+function renderSessionItems() {
+  const items = currentSession?.items || [];
+  const el = document.getElementById('session-items-list');
+  if (!items.length) {
+    el.innerHTML = `<div class="empty" style="padding:30px 0;"><div class="empty-icon">📦</div><div class="empty-title">Sin productos todavía</div><div class="empty-sub">Escaneá o ingresá un producto</div></div>`;
+    document.getElementById('session-total').style.display = 'none';
+    return;
+  }
+  el.innerHTML = items.map((item, i) => `
+    <div class="session-item">
+      <div class="session-item-name">${item.name}</div>
+      <div class="session-item-price">${fmtPrice(item.price)}</div>
+    </div>`).join('');
+  const total = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  document.getElementById('session-total').style.display = 'flex';
+  document.getElementById('session-total-num').textContent = fmtPrice(total);
+}
+
+async function crearSesion() {
+  const code = String(Math.floor(1000 + Math.random() * 9000));
+  sessionCode = code;
+  currentSession = { code, items: [], date: new Date().toISOString() };
+  await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+  renderCompraScreen();
+  showToast(`Compra creada. Código: ${code}`);
+}
+
+function openJoinModal() { openModal('modal-join'); }
+
+async function joinSesion() {
+  const code = document.getElementById('join-code-input').value.trim();
+  if (!code || code.length !== 4) { showToast('Ingresá un código de 4 dígitos'); return; }
+  const data = await apiCall({ action: 'getSession', code });
+  if (!data.session) { showToast('No se encontró esa compra'); return; }
+  sessionCode = code;
+  currentSession = data.session;
+  closeModal('modal-join');
+  renderCompraScreen();
+  showToast('Te uniste a la compra ✓');
+}
+
+async function cerrarSesion() {
+  if (!currentSession) return;
+  if (!confirm('¿Cerrar esta compra y guardarla en el historial?')) return;
+  await apiCall({ action: 'closeSession', data: JSON.stringify(currentSession) });
+  sessionCode = null;
+  currentSession = null;
+  renderCompraScreen();
+  showToast('Compra guardada en historial ✓');
+}
+
+async function addToSession(barcode, name, price) {
+  if (!sessionCode || !currentSession) return;
+  const items = currentSession.items || [];
+  const existing = items.findIndex(i => i.barcode === barcode);
+  if (existing >= 0) {
+    items[existing].price = price;
+    items[existing].name = name;
+  } else {
+    items.push({ barcode, name, price });
+  }
+  currentSession.items = items;
+  await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+  renderSessionItems();
+}
+
+// ── History Screen ─────────────────────────────────────────────────────────
+function renderHistory(history) {
+  const el = document.getElementById('history-list');
+  if (!history.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Sin historial todavía</div><div class="empty-sub">Las compras cerradas aparecen acá</div></div>`;
+    return;
+  }
+  el.innerHTML = history.map((h, idx) => {
+    const items = (h.items || []).map(item => {
+      const arrow = !item.prevPrice ? '➡️' : item.price > item.prevPrice ? '🔴↑' : item.price < item.prevPrice ? '🟢↓' : '➡️';
+      return `<div class="history-item">
+        <div class="history-item-name">${item.name}</div>
+        <div class="history-item-prev">${item.prevPrice ? fmtPrice(item.prevPrice) : '-'}</div>
+        <div class="history-item-arrow">${arrow}</div>
+        <div class="history-item-price">${fmtPrice(item.price)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="history-card">
+      <div class="history-header">
+        <div>
+          <div class="history-header-title">Compra ${idx === 0 ? 'más reciente' : idx === 1 ? 'anterior' : 'hace 2 compras'}</div>
+          <div class="history-header-date">${h.date ? fmtDate(h.date) : ''}</div>
+        </div>
+        <div class="history-header-total">${fmtPrice(h.total)}</div>
+      </div>
+      ${items}
+    </div>`;
+  }).join('');
+}
+
+// ── Scanner ────────────────────────────────────────────────────────────────
+async function openScanner(mode) {
+  scannerMode = mode;
+  document.getElementById('scanner-overlay').classList.add('open');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 } }
+    });
+    scannerStream = stream;
+    const video = document.getElementById('scanner-video');
+    video.srcObject = stream;
+    video.play();
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','code_128','code_39'] });
+      scannerInterval = setInterval(async () => {
+        if (video.readyState < 2) return;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length > 0) {
+            closeScanner();
+            handleBarcode(codes[0].rawValue);
+          }
+        } catch {}
+      }, 300);
+    } else {
+      document.getElementById('scanner-hint').textContent = 'Tu navegador no soporta escaneo automático. Usá el botón Manual.';
+    }
+  } catch(e) {
+    closeScanner();
+    showToast('No se pudo acceder a la cámara');
+  }
+}
+
+function closeScanner() {
+  clearInterval(scannerInterval);
+  if (scannerStream) { scannerStream.getTracks().forEach(t => t.stop()); scannerStream = null; }
+  document.getElementById('scanner-overlay').classList.remove('open');
+}
+
+function openManual(mode) {
+  scannerMode = mode;
+  document.getElementById('manual-code-input').value = '';
+  openModal('modal-manual');
+}
+
+function submitManual() {
+  const code = document.getElementById('manual-code-input').value.trim();
+  if (!code) return;
+  closeModal('modal-manual');
+  handleBarcode(code);
+}
+
+async function handleBarcode(barcode) {
+  const existing = products[barcode];
+  openProductModal(barcode, existing);
+}
+
+// ── Product Modal ──────────────────────────────────────────────────────────
+async function openProductModal(barcode, existing) {
+  existing = existing || products[barcode];
+  document.getElementById('modal-barcode').value = barcode;
+  document.getElementById('modal-name').value = existing?.name || '';
+  document.getElementById('modal-price').value = '';
+  document.getElementById('modal-product-title').textContent = existing ? 'Actualizar precio' : 'Nuevo producto';
+  document.getElementById('modal-save-btn').style.display = 'block';
+  document.getElementById('modal-loading').style.display = 'none';
+
+  // History
+  const histWrap = document.getElementById('modal-history-wrap');
+  const histList = document.getElementById('modal-history-list');
+  if (existing?.history?.length) {
+    histWrap.style.display = 'block';
+    histList.innerHTML = [...existing.history].reverse().slice(0,5).map(h =>
+      `<div style="background:white;border-radius:8px;padding:8px 12px;min-width:80px;text-align:center;border:1px solid var(--border);flex-shrink:0;">
+        <div style="font-weight:700;font-size:14px;">${fmtPrice(h.price)}</div>
+        <div style="font-size:10px;color:var(--slate);margin-top:2px;">${fmtDate(h.date)}</div>
+      </div>`
+    ).join('');
+  } else {
+    histWrap.style.display = 'none';
+  }
+
+  openModal('modal-product');
+
+  // Auto-suggest name via Claude if new product
+  if (!existing?.name) {
+    document.getElementById('modal-loading').style.display = 'block';
+    document.getElementById('modal-save-btn').style.display = 'none';
+    try {
+      const res = await fetch(CLAUDE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6', max_tokens: 80,
+          messages: [{ role: 'user', content: `Código de barras: ${barcode}. Solo decime el nombre del producto (marca + descripción corta, máx 40 chars). Si no lo conocés, respondé "Desconocido".` }]
+        })
+      });
+      const data = await res.json();
+      const name = data.content?.[0]?.text?.trim();
+      if (name && name !== 'Desconocido') document.getElementById('modal-name').value = name;
+    } catch {}
+    document.getElementById('modal-loading').style.display = 'none';
+    document.getElementById('modal-save-btn').style.display = 'block';
+  }
+}
+
+async function saveProduct() {
+  const barcode = document.getElementById('modal-barcode').value;
+  const name = document.getElementById('modal-name').value.trim();
+  const priceRaw = document.getElementById('modal-price').value;
+  if (!name || !priceRaw) { showToast('Completá nombre y precio'); return; }
+  const price = parseFloat(priceRaw);
+  if (isNaN(price) || price <= 0) { showToast('Precio inválido'); return; }
+
+  const existing = products[barcode];
+  const history = [...(existing?.history || []), { price, date: new Date().toISOString() }];
+  const product = { barcode, name, history };
+
+  try {
+    await apiCall({ action: 'saveProduct', data: JSON.stringify(product) });
+    products[barcode] = product;
+    renderProducts();
+    updateBadge();
+    closeModal('modal-product');
+    showToast('Guardado ✓');
+
+    // Also add to session if active
+    if (sessionCode && currentSession) {
+      await addToSession(barcode, name, price);
+    }
+  } catch(e) { showToast('Error al guardar'); }
+}
+
+// ── Ticket Upload ──────────────────────────────────────────────────────────
+function openTicketModal() {
+  ticketImages = [];
+  ticketExtracted = [];
+  document.getElementById('ticket-thumbs').innerHTML = '';
+  document.getElementById('ticket-extract-result').style.display = 'none';
+  document.getElementById('ticket-loading').style.display = 'none';
+  document.getElementById('ticket-analyze-btn').style.display = 'block';
+  openModal('modal-ticket');
+}
+
+function handleTicketFiles(event) {
+  const files = Array.from(event.target.files);
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      ticketImages.push(e.target.result);
+      const thumbs = document.getElementById('ticket-thumbs');
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.className = 'ticket-thumb';
+      thumbs.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function analyzeTickets() {
+  if (!ticketImages.length) { showToast('Subí al menos una foto'); return; }
+  document.getElementById('ticket-loading').style.display = 'block';
+  document.getElementById('ticket-analyze-btn').style.display = 'none';
+  document.getElementById('ticket-extract-result').style.display = 'none';
+
+  try {
+    const content = [
+      ...ticketImages.map(img => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.split(';')[0].split(':')[1], data: img.split(',')[1] }
+      })),
+      { type: 'text', text: 'Extraé todos los productos de este ticket de supermercado. Respondé SOLO con JSON válido, sin texto extra. Formato: {"items":[{"name":"nombre producto","price":1234}]}. Usá el precio final con IVA (columna TOTAL o PU CON IVA). Solo incluí productos con precio.' }
+    ];
+
+    const res = await fetch(CLAUDE_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, messages: [{ role: 'user', content }] })
+    });
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '{}';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    ticketExtracted = parsed.items || [];
+
+    document.getElementById('ticket-items-preview').innerHTML = ticketExtracted.map((item, i) =>
+      `<div class="session-item">
+        <div class="session-item-name">${item.name}</div>
+        <div class="session-item-price">${fmtPrice(item.price)}</div>
+      </div>`
+    ).join('');
+    document.getElementById('ticket-extract-result').style.display = 'block';
+  } catch(e) {
+    showToast('Error al analizar el ticket');
+    document.getElementById('ticket-analyze-btn').style.display = 'block';
+  }
+  document.getElementById('ticket-loading').style.display = 'none';
+}
+
+async function importTicketItems() {
+  if (!ticketExtracted.length) return;
+  if (!sessionCode) { showToast('Primero abrí o creá una compra'); return; }
+  for (const item of ticketExtracted) {
+    await addToSession(`ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`, item.name, item.price);
+    await new Promise(r => setTimeout(r, 100));
+  }
+  closeModal('modal-ticket');
+  showToast(`${ticketExtracted.length} productos agregados ✓`);
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function fmtPrice(n) { return '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function fmtDate(iso) { return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+});
+</script>
+</body>
+</html>
