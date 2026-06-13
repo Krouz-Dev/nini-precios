@@ -1002,12 +1002,35 @@ async function analyzeTickets() {
 async function importTicketItems() {
   if (!ticketExtracted.length) return;
   if (!sessionCode) { showToast('Primero abrí o creá una compra'); return; }
-  for (const item of ticketExtracted) {
-    await addToSession(`ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`, item.name, item.price);
-    await new Promise(r => setTimeout(r, 100));
+
+  // Mostrar loader y ocultar el resto
+  document.getElementById('ticket-extract-result').style.display = 'none';
+  const loader = document.getElementById('ticket-loading');
+  loader.querySelector('.loading-text').textContent = 'Agregando productos, esperá...';
+  loader.style.display = 'block';
+
+  // Agregar todos los items de una sola vez (más rápido que uno por uno)
+  const items = currentSession.items || [];
+  ticketExtracted.forEach(item => {
+    items.push({
+      barcode: `ticket-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: item.name,
+      price: item.price
+    });
+  });
+  currentSession.items = items;
+
+  try {
+    await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+    renderSessionItems();
+    loader.style.display = 'none';
+    closeModal('modal-ticket');
+    showToast(`${ticketExtracted.length} productos agregados ✓`);
+  } catch(e) {
+    loader.style.display = 'none';
+    showToast('Error al agregar. Intentá de nuevo.');
+    document.getElementById('ticket-extract-result').style.display = 'block';
   }
-  closeModal('modal-ticket');
-  showToast(`${ticketExtracted.length} productos agregados ✓`);
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
