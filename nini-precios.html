@@ -542,6 +542,17 @@ async function apiCall(params) {
   return res.json();
 }
 
+// Para payloads grandes (sesiones con muchos items) usamos POST sin límite de URL
+async function apiPost(payload) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    redirect: 'follow'
+  });
+  return res.json();
+}
+
 async function loadProducts() {
   try {
     const data = await apiCall({ action: 'getProducts' });
@@ -660,7 +671,7 @@ async function crearSesion() {
   const code = String(Math.floor(1000 + Math.random() * 9000));
   sessionCode = code;
   currentSession = { code, items: [], date: new Date().toISOString() };
-  await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+  await apiPost({ action: 'saveSession', data: currentSession });
   renderCompraScreen();
   showToast(`Compra creada. Código: ${code}`);
 }
@@ -682,7 +693,7 @@ async function joinSesion() {
 async function cerrarSesion() {
   if (!currentSession) return;
   if (!confirm('¿Cerrar esta compra y guardarla en el historial?')) return;
-  await apiCall({ action: 'closeSession', data: JSON.stringify(currentSession) });
+  await apiPost({ action: 'closeSession', data: currentSession });
   sessionCode = null;
   currentSession = null;
   renderCompraScreen();
@@ -700,7 +711,7 @@ async function addToSession(barcode, name, price) {
     items.push({ barcode, name, price });
   }
   currentSession.items = items;
-  await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+  await apiPost({ action: 'saveSession', data: currentSession });
   renderSessionItems();
 }
 
@@ -1097,7 +1108,7 @@ async function importTicketItems() {
   window._lastMatchInfo = matched;
 
   try {
-    await apiCall({ action: 'saveSession', data: JSON.stringify(currentSession) });
+    await apiPost({ action: 'saveSession', data: currentSession });
     renderSessionItems();
     loader.style.display = 'none';
     closeModal('modal-ticket');
