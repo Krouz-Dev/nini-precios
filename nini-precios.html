@@ -489,6 +489,7 @@ let scannerStream = null;
 let scannerInterval = null;
 let ticketImages = []; // base64 arrays
 let ticketExtracted = [];
+let ticketDescuentos = 0;
 let pollInterval = null;
 
 // ── PIN ────────────────────────────────────────────────────────────────────
@@ -657,11 +658,14 @@ function renderSessionItems() {
     document.getElementById('session-total').style.display = 'none';
     return;
   }
-  el.innerHTML = items.map((item, i) => `
-    <div class="session-item">
-      <div class="session-item-name">${item.name}</div>
-      <div class="session-item-price">${fmtPrice(item.price)}</div>
-    </div>`).join('');
+  el.innerHTML = items.map((item, i) => {
+    const isDiscount = item.isDiscount || (Number(item.price) < 0);
+    return `
+    <div class="session-item" ${isDiscount ? 'style="background:#F0FDF4;"' : ''}>
+      <div class="session-item-name" ${isDiscount ? 'style="color:#16A34A;"' : ''}>${isDiscount ? '🟢 ' : ''}${item.name}</div>
+      <div class="session-item-price" style="color:${isDiscount ? '#16A34A' : 'var(--red)'};">${fmtPrice(item.price)}</div>
+    </div>`;
+  }).join('');
   const total = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
   document.getElementById('session-total').style.display = 'flex';
   document.getElementById('session-total-num').textContent = fmtPrice(total);
@@ -1021,7 +1025,7 @@ async function analyzeOneBatch(batch) {
   });
   const result = await res.json();
   if (result.error) throw new Error(result.error);
-  return result.items || [];
+  return { items: result.items || [], descuentos: Number(result.descuentos) || 0 };
 }
 
 async function analyzeTickets() {
@@ -1040,11 +1044,13 @@ async function analyzeTickets() {
   }
 
   ticketExtracted = [];
+  ticketDescuentos = 0;
   try {
     for (let b = 0; b < batches.length; b++) {
       loaderText.textContent = `Analizando ticket... (${b + 1} de ${batches.length})`;
-      const items = await analyzeOneBatch(batches[b]);
-      ticketExtracted = ticketExtracted.concat(items);
+      const batchResult = await analyzeOneBatch(batches[b]);
+      ticketExtracted = ticketExtracted.concat(batchResult.items);
+      ticketDescuentos += batchResult.descuentos;
     }
 
     if (!ticketExtracted.length) {
@@ -1094,6 +1100,16 @@ async function importTicketItems() {
     });
     if (match) matched++;
   });
+  // Agregar línea de descuentos si hay
+  if (ticketDescuentos && ticketDescuentos < 0) {
+    items.push({
+      barcode: `descuento-${Date.now()}`,
+      name: 'Descuentos y promociones',
+      price: ticketDescuentos,
+      isDiscount: true
+    });
+  }
+
   currentSession.items = items;
   window._lastMatchInfo = matched;
 
@@ -1115,7 +1131,7 @@ async function importTicketItems() {
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-function fmtPrice(n) { return '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function fmtPrice(n) { const num = Number(n) || 0; const sign = num < 0 ? '-$' : '$'; return sign + Math.abs(num).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 function fmtDate(iso) { return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
 
 let toastTimer;
